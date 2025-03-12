@@ -1,8 +1,9 @@
 pipeline {
     parameters {
         booleanParam(name: 'autoApprove', defaultValue: false, description: 'Automatically run apply after generating plan?')
+        booleanParam(name: 'destroyInfra', defaultValue: false, description: 'Destroy the infrastructure?')
     } 
-    
+
     agent any
 
     stages {
@@ -31,6 +32,9 @@ pipeline {
         }
 
         stage('Terraform Init & Plan') {
+            when {
+                not { equals expected: true, actual: params.destroyInfra }
+            }
             steps {
                 withEnv([
                     "AWS_ACCESS_KEY_ID=${env.AWS_ACCESS_KEY_ID}",
@@ -46,20 +50,10 @@ pipeline {
             }
         }
 
-        /* stage('Approval') {
-            when {
-                not { equals expected: true, actual: params.autoApprove }
-            }
-            steps {
-                script {
-                    def plan = readFile 'terraform/tfplan.txt'
-                    input message: "Do you want to apply the plan?",
-                    parameters: [text(name: 'Plan', description: 'Please review the plan', defaultValue: plan)]
-                }
-            }
-        } */
-
         stage('Terraform Apply') {
+            when {
+                not { equals expected: true, actual: params.destroyInfra }
+            }
             steps {
                 withEnv([
                     "AWS_ACCESS_KEY_ID=${env.AWS_ACCESS_KEY_ID}",
@@ -75,6 +69,22 @@ pipeline {
                     script {
                         echo "Terraform Apply failed! Check apply.log"
                         sh 'cat terraform/apply.log'
+                    }
+                }
+            }
+        }
+
+        stage('Terraform Destroy') {
+            when {
+                equals expected: true, actual: params.destroyInfra
+            }
+            steps {
+                withEnv([
+                    "AWS_ACCESS_KEY_ID=${env.AWS_ACCESS_KEY_ID}",
+                    "AWS_SECRET_ACCESS_KEY=${env.AWS_SECRET_ACCESS_KEY}"
+                ]) {
+                    dir("terraform") {
+                        sh 'terraform destroy -auto-approve'
                     }
                 }
             }
